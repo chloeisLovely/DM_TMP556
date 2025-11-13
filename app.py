@@ -420,22 +420,26 @@ def main():
                 proba = model.predict_proba(X_test)[:, 1]
                 pred = (proba >= 0.5).astype(int)
                 
-                st.subheader(f"{name}: 최적 하이퍼파라미터")
+                # --- [오류 수정] key 추가 ---
+                st.subheader(f"{name}: 최적 하이퍼파라미터", key=f"param_header_{name}")
                 
+                # --- [오류 수정] key 추가 ---
                 st.json(model.named_steps['clf'].get_params(), key=f"json_{name}")
                 
                 tcol1, tcol2 = st.columns([1, 2])
                 
                 fig_cm = plot_confusion(y_test, pred, cmap="Reds" if name == "Logistic" else "Blues")
                 
+                # --- [오류 수정] key 추가 ---
                 tcol1.pyplot(fig_cm, key=f"cm_plot_{name}")
                 
                 fig_roc_ind = plot_roc_curve(y_test, proba, name)
                 
+                # --- [오류 수정] key 추가 ---
                 tcol2.pyplot(fig_roc_ind, key=f"roc_plot_{name}")
                 
                 
-                # key 추가 
+                # key 추가 (이전 수정 유지)
                 st.subheader("Classification Report", key=f"report_header_{name}")
                 
                 try:
@@ -445,10 +449,13 @@ def main():
                     report_df = pd.DataFrame(report_dict).transpose().round(4)
                     # st.dataframe으로 깔끔하게 표시
                    
+                    # --- [오류 수정] key 추가 ---
                     st.dataframe(report_df, key=f"report_df_{name}")
                 except Exception as e:
                    
+                    # --- [오류 수정] key 추가 ---
                     st.error(f"Report 생성 중 오류: {e}", key=f"report_err_{name}")
+                    # --- [오류 수정] key 추가 ---
                     st.text(classification_report(y_test, pred, target_names=[str(c) for c in le.classes_]), key=f"report_txt_{name}")
                
 
@@ -471,7 +478,7 @@ def main():
         else:
             st.warning("Test Set 평가지표를 계산할 수 없습니다.")
         
-        
+        # --- [수정] 지표 설명을 HR 예시로 변경 및 Accuracy 추가 ---
         st.markdown(
             """
             - **Accuracy (정확도)가 중요하다면?**
