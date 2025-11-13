@@ -201,7 +201,7 @@ def train_models(X_train, y_train, numeric_features, categorical_features):
 
 def main():
     st.set_page_config(page_title="범용 분류 모델 비교 대시보드", layout="wide")
-    st.title("👍 TMP556_범용 분류 모델 비교 대시보드")
+    st.title("👍 TMP556_범용 분류 모델 비교")
     st.markdown("어떤 CSV 파일이든 업로드하여 4가지 주요 분류 모델의 성능을 비교, 평가, 시각화합니다.")
 
     # --- Session State 초기화 ---
@@ -489,7 +489,7 @@ def main():
                 - **(예시: HR 분석)** **실제 이직할 직원(Positive)**을 놓치지 않고 찾아내는 것이 목표일 때 선택합니다. (예: 핵심 인재 유출 방지)
                 - **False Negative (FN) 비용**이 매우 클 때 (예: 이직할 핵심 인재를 '잔류'로 잘못 예측하여 아무 조치도 못 하고 놓침) 이 지표를 높여야 합니다.
 
-            - **Precision (정밀도)이 중요하다면?**
+            - **Precision (정밀도)가 중요하다면?**
                 - **(예시: HR 분석)** 모델이 **'이직자(Positive)'라고 예측한 사람**이 실제로 이직할 확률이 높아야 할 때 선택합니다.
                 - **False Positive (FP) 비용**이 매우 클 때 (예: 잔류할 직원을 '이직자'로 잘못 예측하여 불필요한 면담, 보너스 지급 등 리소스를 낭비함) 이 지표를 높여야 합니다.
 
