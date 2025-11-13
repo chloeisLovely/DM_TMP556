@@ -1,3 +1,5 @@
+# 0. 라이브러리
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -69,7 +71,7 @@ def plot_roc_curve(y_true, proba, name):
     return fig
 
 @st.cache_data
-def convert_fig_to_png(_fig): # 1. fig -> _fig 로 변경
+def convert_fig_to_png(_fig): # 1. fig -> _fig 로 변경 (캐시 오류 수정)
     """Matplotlib Figure를 PNG 이미지 바이트로 변환 (캐시 해시 비활성화)"""
     buf = io.BytesIO()
     _fig.savefig(buf, format="png", bbox_inches='tight') # 2. 내부 변수도 _fig 로 변경
@@ -96,8 +98,15 @@ def split_data(X, y, test_ratio, val_ratio):
     
     # 2단계: 남은 데이터(Train+Val)에서 Val 분리
     # (Train+Val) 크기 대비 Val 크기 비율 계산
-    val_ratio_within = val_ratio / (1.0 - test_ratio)
+    if (1.0 - test_ratio) == 0: # test_ratio가 1.0일 경우 방지
+        val_ratio_within = 0
+    else:
+        val_ratio_within = val_ratio / (1.0 - test_ratio)
     
+    # val_ratio_within이 1.0 이상이면 Val이 Train+Val보다 크게 설정된 것이므로 조정
+    if val_ratio_within >= 1.0:
+        val_ratio_within = 0.99 # 거의 모든 것을 Val로 (비정상적이지만 에러 방지)
+
     X_train, X_val, y_train, y_val = train_test_split(
         X_train_val, y_train_val,
         test_size=val_ratio_within,
@@ -109,7 +118,7 @@ def split_data(X, y, test_ratio, val_ratio):
 def train_models(X_train, y_train, numeric_features, categorical_features):
     """전처리 파이프라인을 포함한 4개 모델을 훈련"""
     
-    # transformers 리스트를 동적으로 구성합니다.
+    # transformers 리스트를 동적으로 구성합니다. (ValueError 수정)
     transformers_list = []
 
     if numeric_features: # 수치형 변수가 하나라도 있을 때만 추가
@@ -128,7 +137,7 @@ def train_models(X_train, y_train, numeric_features, categorical_features):
     # 전처리 파이프라인
     preprocess = ColumnTransformer(
         transformers=transformers_list, # 동적으로 생성된 리스트 사용
-        remainder="passthrough" # 선택되지 않은 피처는 통과
+        remainder="passthrough" # 선택되지 않은 피처는 통과시킴
     )
 
     # 5-fold 교차 검증 설정
@@ -171,7 +180,7 @@ def train_models(X_train, y_train, numeric_features, categorical_features):
             # 클래스 불균형 비율 계산
             pos = y_train.sum()
             neg = (y_train == 0).sum()
-            scale_pos_weight = neg / pos
+            scale_pos_weight = neg / pos if pos > 0 else 1 # 0으로 나누는 오류 방지
             
             xgb_pipeline = Pipeline(steps=[
                 ("preprocess", preprocess),
@@ -186,15 +195,16 @@ def train_models(X_train, y_train, numeric_features, categorical_features):
     
     return models_dict
 
+
 # 3. Streamlit 앱 메인 함수
 
 def main():
     st.set_page_config(page_title="범용 분류 모델 비교 대시보드", layout="wide")
-    st.title("👍범용 분류 모델 비교 대시보드")
+    st.title("👍 범용 분류 모델 비교 대시보드")
     st.markdown("어떤 CSV 파일이든 업로드하여 4가지 주요 분류 모델의 성능을 비교, 평가, 시각화합니다.")
 
     # --- Session State 초기화 ---
-    # 앱이 재실행되어도 유지할 변수들을 정의
+    # (앱 재실행 시 유지되어야 할 값들)
     if 'analysis_run' not in st.session_state:
         st.session_state.analysis_run = False # 분석 실행 여부
     if 'metrics_df' not in st.session_state:
@@ -205,10 +215,13 @@ def main():
         st.session_state.label_encoder = None # 타깃 인코더
     if 'test_data' not in st.session_state:
         st.session_state.test_data = (None, None) # (X_test, y_test)
-    if 'X_val_data' not in st.session_state:
-        st.session_state.X_val_data = (None, None) # (X_val, y_val)
     if 'final_metric' not in st.session_state:
         st.session_state.final_metric = 'recall' # 최종 선택 지표
+    if 'sample_loaded' not in st.session_state:
+        st.session_state.sample_loaded = False
+    if 'current_file' not in st.session_state:
+        st.session_state.current_file = None
+
 
     # --- 사이드바 설정 ---
     st.sidebar.header("⚙️ 1. 분석 설정")
@@ -229,18 +242,19 @@ def main():
              st.sidebar.caption("'cleaned_hr_attrition_dataset.csv' 파일을 같은 폴더에 두면 샘플 분석을 제공합니다.")
     
     # (세션 상태를 이용해 샘플 로드 유지)
-    if not uploaded_file and 'sample_loaded' in st.session_state and st.session_state.sample_loaded:
+    if not uploaded_file and st.session_state.sample_loaded:
          uploaded_file = "cleaned_hr_attrition_dataset.csv"
 
     if uploaded_file is not None:
         try:
             # 파일이 변경되면 분석 상태 초기화
-            if 'current_file' not in st.session_state or st.session_state.current_file != (uploaded_file.name if hasattr(uploaded_file, 'name') else uploaded_file):
+            file_name = uploaded_file.name if hasattr(uploaded_file, 'name') else uploaded_file
+            if st.session_state.current_file != file_name:
                 st.session_state.analysis_run = False
-                st.session_state.current_file = (uploaded_file.name if hasattr(uploaded_file, 'name') else uploaded_file)
+                st.session_state.current_file = file_name
 
             df = pd.read_csv(uploaded_file)
-            st.sidebar.success(f"'{uploaded_file.name if hasattr(uploaded_file, 'name') else uploaded_file}' 로드 성공!")
+            st.sidebar.success(f"'{file_name}' 로드 성공!")
             
             with st.expander("데이터 미리보기 (상위 5행)"):
                 st.dataframe(df.head())
@@ -249,11 +263,17 @@ def main():
             st.sidebar.header("🎯 2. 변수 설정")
             all_columns = df.columns.tolist()
             
-            default_target = "AttritionFlag" if "AttritionFlag" in all_columns else all_columns[-1]
+            # (샘플 데이터의 경우 기본값 설정)
+            default_target_idx = 0
+            if "AttritionFlag" in all_columns:
+                default_target_idx = all_columns.index("AttritionFlag")
+            elif len(all_columns) > 0:
+                default_target_idx = len(all_columns) - 1 # 마지막 컬럼
+                
             target_variable = st.sidebar.selectbox(
                 "타깃(Y) 변수 선택 (필수, 2개 값)",
                 all_columns,
-                index=all_columns.index(default_target)
+                index=default_target_idx
             )
             
             feature_candidates = [col for col in all_columns if col != target_variable]
@@ -271,8 +291,8 @@ def main():
             
             train_ratio = 1.0 - test_ratio - val_ratio
             
-            if train_ratio <= 0:
-                st.sidebar.error(f"훈련 세트 비율이 {train_ratio*100:.0f}%입니다. 테스트/검증 비율을 낮춰주세요.")
+            if train_ratio <= 0.1: # 훈련셋이 너무 작으면 경고
+                st.sidebar.error(f"훈련 세트 비율이 {train_ratio*100:.0f}%로 너무 낮습니다. 테스트/검증 비율을 낮춰주세요.")
                 st.stop()
             else:
                 st.sidebar.info(f"훈련 세트 비율: **{train_ratio*100:.0f}%**")
@@ -298,9 +318,13 @@ def main():
                 numeric_features = X.select_dtypes(include=np.number).columns.tolist()
                 categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
                 
+                if not numeric_features and not categorical_features:
+                    st.error("오류: 분석할 피처(X) 변수가 없습니다. '제외할 변수' 설정을 확인하세요.")
+                    st.stop()
+
                 st.write(f"**총 {len(selected_features)}개 피처 사용:**")
-                st.write(f"- 📈 **수치형({len(numeric_features)}개):** `{', '.join(numeric_features)}`")
-                st.write(f"- 🔠 **범주형({len(categorical_features)}개):** `{', '.join(categorical_features)}`")
+                st.write(f"- 📈 **수치형({len(numeric_features)}개):** `{', '.join(numeric_features) if numeric_features else '없음'}`")
+                st.write(f"- 🔠 **범주형({len(categorical_features)}개):** `{', '.join(categorical_features) if categorical_features else '없음'}`")
 
                 X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y_encoded, test_ratio, val_ratio)
                 st.write(f"**데이터 분할 결과:** 훈련 {len(y_train)}개, 검증 {len(y_val)}개, 테스트 {len(y_test)}개")
@@ -323,9 +347,7 @@ def main():
                 st.session_state.models_dict = models_dict
                 st.session_state.label_encoder = le
                 st.session_state.test_data = (X_test, y_test)
-                # st.rerun() # 버튼 클릭 후 즉시 재실행하여 아래 `if` 블록을 타도록 함
-                # ------
-
+                st.rerun() # 버튼 클릭 후 즉시 재실행하여 아래 `if` 블록을 타도록 함
 
         except pd.errors.ParserError:
             st.error("오류: CSV 파일을 읽는 데 실패했습니다. 파일이 손상되었거나 유효한 CSV 형식이 아닌지 확인하세요.")
@@ -338,7 +360,6 @@ def main():
             st.session_state.analysis_run = False
 
     # --- 분석 결과 표시 로직 (Session State 기반) ---
-    # 분석이 실행된 경우(analysis_run == True)에만 이 블록을 표시합니다.
     if st.session_state.analysis_run:
         # Session State에서 결과 불러오기
         metrics_df = st.session_state.metrics_df
@@ -346,8 +367,8 @@ def main():
         le = st.session_state.label_encoder
         X_test, y_test = st.session_state.test_data
 
-        if metrics_df is None or models_dict is None:
-             st.warning("분석 결과가 아직 없습니다. '모델 훈련 및 분석 시작' 버튼을 눌러주세요.")
+        if metrics_df is None or models_dict is None or le is None or X_test is None:
+             st.warning("분석 결과가 없습니다. 사이드바에서 '모델 훈련 및 분석 시작' 버튼을 눌러주세요.")
              st.stop()
              
         # --- 1.5. 모델 평가 (표시) ---
@@ -409,39 +430,69 @@ def main():
                 fig_roc_ind = plot_roc_curve(y_test, proba, name)
                 tcol2.pyplot(fig_roc_ind)
                 
-                st.text("Classification Report:")
-                st.text(classification_report(y_test, pred, target_names=[str(c) for c in le.classes_]))
+                # --- [수정] Classification Report를 DataFrame으로 변환 ---
+                st.subheader("Classification Report")
+                try:
+                    # output_dict=True로 딕셔너리 받기
+                    report_dict = classification_report(y_test, pred, target_names=[str(c) for c in le.classes_], output_dict=True)
+                    # DataFrame으로 변환
+                    report_df = pd.DataFrame(report_dict).transpose().round(4)
+                    # st.dataframe으로 깔끔하게 표시
+                    st.dataframe(report_df)
+                except Exception as e:
+                    st.error(f"Report 생성 중 오류: {e}")
+                    st.text(classification_report(y_test, pred, target_names=[str(c) for c in le.classes_])) # 실패 시 텍스트로 표시
+                # --- [수정 끝] ---
 
         # --- 1.8. 최종 결론 (표시) ---
         st.header("💡 5. 최종 결론")
         st.subheader("👌핵심 지표에 따른 최적 모델")
         
-        # key 파라미터를 사용하여 selectbox의 상태를 st.session_state.final_metric에 바인딩
         metric_to_optimize = st.selectbox(
             "비즈니스 목표에 가장 중요한 핵심 지표(Metric)를 선택하세요:",
             ["recall", "roc_auc", "accuracy", "precision", "f1"],
-            key='final_metric' # 이 key가 st.session_state.final_metric을 자동으로 관리
+            key='final_metric' # st.session_state와 연동
         )
         
-        # st.session_state.final_metric을 직접 읽어와서 사용
-        best_model_name = test_metrics[st.session_state.final_metric].idxmax()
-        best_score = test_metrics.loc[best_model_name, st.session_state.final_metric]
+        # test_metrics가 비어있지 않은지 확인
+        if not test_metrics.empty:
+            best_model_name = test_metrics[st.session_state.final_metric].idxmax()
+            best_score = test_metrics.loc[best_model_name, st.session_state.final_metric]
+            
+            st.success(f"**'{st.session_state.final_metric.upper()}'** 지표 기준, 최적 모델은 **'{best_model_name}'** (점수: {best_score:.4f}) 입니다.")
+        else:
+            st.warning("Test Set 평가지표를 계산할 수 없습니다.")
         
-        st.success(f"**'{st.session_state.final_metric.upper()}'** 지표 기준, 최적 모델은 **'{best_model_name}'** (점수: {best_score:.4f}) 입니다.")
-        
+        # --- [수정] 지표 설명을 HR 예시로 변경 및 Accuracy 추가 ---
         st.markdown(
             """
-            - **Recall (재현율)이 중요하다면?** (예: 암 진단, 사기 탐지)
-                - "실제 정답(Positive)인 것을 놓치지 않는 것"이 목표입니다. 
-                - **False Negative (FN)** 비용이 매우 클 때 (예: 암 환자를 '정상'으로 판별) 선택합니다.
-            - **Precision (정밀도)이 중요하다면?** (예: 스팸 메일 필터)
-                - "모델이 정답(Positive)이라고 예측한 것이 진짜 정답일 확률"이 목표입니다.
-                - **False Positive (FP)** 비용이 매우 클 때 (예: 중요한 메일을 '스팸'으로 판별) 선택합니다.
+            - **Accuracy (정확도)가 중요하다면?**
+                - **(예시: HR 분석)** 전체 직원 중 '이직자'와 '잔류자'를 모두 얼마나 정확하게 예측했는지가 중요할 때 선택합니다.
+                - **(주의)** 만약 잔류자가 95%고 이직자가 5%라면, 모델이 전부 '잔류'로 예측해도 정확도는 95%가 나옵니다. 데이터가 불균형할 땐 신뢰하기 어려운 지표입니다.
+
+            - **Recall (재현율)이 중요하다면?**
+                - **(예시: HR 분석)** 실제 이직할 직원(Positive)을 놓치지 않고 찾아내는 것이 목표일 때 선택합니다. (예: 핵심 인재 유출 방지)
+                - **False Negative (FN) 비용**이 매우 클 때 (예: 이직할 핵심 인재를 '잔류'로 잘못 예측하여 아무 조치도 못 하고 놓침) 이 지표를 높여야 합니다.
+
+            - **Precision (정밀도)이 중요하다면?**
+                - **(예시: HR 분석)** 모델이 **'이직자(Positive)'라고 예측한 사람**이 실제로 이직할 확률이 높아야 할 때 선택합니다.
+                - **False Positive (FP) 비용**이 매우 클 때 (예: 잔류할 직원을 '이직자'로 잘못 예측하여 불필요한 면담, 보너스 지급 등 리소스를 낭비함) 이 지표를 높여야 합니다.
+
             - **ROC-AUC가 중요하다면?**
-                - 모델이 Positive와 Negative를 얼마나 잘 '구별'하는지 나타내는 전반적인 성능 지표입니다.
+                - 모델이 '이직자'와 '잔류자'를 얼마나 잘 **구별**하는지 나타내는 전반적인 성능 지표입니다.
+                - Recall과 Precision이 상충(Trade-off) 관계일 때, 모델의 종합적인 분류 성능을 판단하기 좋습니다.
+            
+            - **F1-Score가 중요하다면?**
+                - Precision과 Recall의 **조화 평균**입니다. 두 지표가 모두 중요하지만 데이터가 불균형할 때 (예: 이직자가 5%인 경우) Accuracy보다 신뢰할 수 있습니다.
             """
         )
         st.balloons()
+
+
+# 4. 스크립트 실행
+
+if __name__ == "__main__":
+    main()
 
 # 4. 스크립트 실행
 
