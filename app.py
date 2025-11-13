@@ -1,4 +1,4 @@
-# 0. 라이브러리
+# 0. 라이브러리 
 
 import streamlit as st
 import pandas as pd
@@ -82,6 +82,7 @@ def convert_fig_to_png(_fig): # 1. fig -> _fig 로 변경 (캐시 오류 수정)
 def convert_df_to_csv(df):
     """DataFrame을 CSV 바이트로 변환"""
     return df.to_csv(index=True).encode('utf-8')
+
 
 
 # 2. 데이터 분할 및 모델 훈련 함수 (캐시 없음)
@@ -196,11 +197,11 @@ def train_models(X_train, y_train, numeric_features, categorical_features):
     return models_dict
 
 
-# 3. Streamlit 앱 메인 함수
+# 3. Streamlit 앱 메인
 
 def main():
     st.set_page_config(page_title="범용 분류 모델 비교 대시보드", layout="wide")
-    st.title("👍 범용 분류 모델 비교 대시보드")
+    st.title("👍 TMP556_범용 분류 모델 비교 대시보드")
     st.markdown("어떤 CSV 파일이든 업로드하여 4가지 주요 분류 모델의 성능을 비교, 평가, 시각화합니다.")
 
     # --- Session State 초기화 ---
@@ -371,7 +372,7 @@ def main():
              st.warning("분석 결과가 없습니다. 사이드바에서 '모델 훈련 및 분석 시작' 버튼을 눌러주세요.")
              st.stop()
              
-        # --- 1.5. 모델 평가 (표시) ---
+        # --- 1.5. 모델 평가 ---
         st.header("📊 2. 모델 성능 비교표")
         st.dataframe(metrics_df.style.highlight_max(axis=0, color="lightgreen"))
         st.download_button(
@@ -381,7 +382,7 @@ def main():
             mime="text/csv",
         )
 
-        # --- 1.6. 성능 시각화 (표시) ---
+        # --- 1.6. 성능 시각화 ---
         st.header("📈 3. 성능 시각화 (Test Set 기준)")
         test_metrics = metrics_df.xs("Test", level="set")
         
@@ -408,7 +409,7 @@ def main():
             mime="image/png",
         )
 
-        # --- 1.7. 모델별 상세 분석 (표시) ---
+        # --- 1.7. 모델별 상세 분석 ---
         st.header("🔍 4. 모델별 상세 분석 (Test Set)")
         tab_names = list(models_dict.keys())
         tabs = st.tabs(tab_names)
@@ -420,33 +421,40 @@ def main():
                 pred = (proba >= 0.5).astype(int)
                 
                 st.subheader(f"{name}: 최적 하이퍼파라미터")
-                st.json(model.named_steps['clf'].get_params())
+                
+                st.json(model.named_steps['clf'].get_params(), key=f"json_{name}")
                 
                 tcol1, tcol2 = st.columns([1, 2])
                 
                 fig_cm = plot_confusion(y_test, pred, cmap="Reds" if name == "Logistic" else "Blues")
-                tcol1.pyplot(fig_cm)
+                
+                tcol1.pyplot(fig_cm, key=f"cm_plot_{name}")
                 
                 fig_roc_ind = plot_roc_curve(y_test, proba, name)
-                tcol2.pyplot(fig_roc_ind)
                 
-                # --- [수정] Classification Report를 DataFrame으로 변환 ---
-                st.subheader("Classification Report")
+                tcol2.pyplot(fig_roc_ind, key=f"roc_plot_{name}")
+                
+                
+                # key 추가 
+                st.subheader("Classification Report", key=f"report_header_{name}")
+                
                 try:
                     # output_dict=True로 딕셔너리 받기
                     report_dict = classification_report(y_test, pred, target_names=[str(c) for c in le.classes_], output_dict=True)
                     # DataFrame으로 변환
                     report_df = pd.DataFrame(report_dict).transpose().round(4)
                     # st.dataframe으로 깔끔하게 표시
-                    st.dataframe(report_df)
+                   
+                    st.dataframe(report_df, key=f"report_df_{name}")
                 except Exception as e:
-                    st.error(f"Report 생성 중 오류: {e}")
-                    st.text(classification_report(y_test, pred, target_names=[str(c) for c in le.classes_])) # 실패 시 텍스트로 표시
-                # --- [수정 끝] ---
+                   
+                    st.error(f"Report 생성 중 오류: {e}", key=f"report_err_{name}")
+                    st.text(classification_report(y_test, pred, target_names=[str(c) for c in le.classes_]), key=f"report_txt_{name}")
+               
 
-        # --- 1.8. 최종 결론 (표시) ---
+        # --- 1.8. 최종 결론 ---
         st.header("💡 5. 최종 결론")
-        st.subheader("👌핵심 지표에 따른 최적 모델")
+        st.subheader("👌 핵심 지표에 따른 최적 모델")
         
         metric_to_optimize = st.selectbox(
             "비즈니스 목표에 가장 중요한 핵심 지표(Metric)를 선택하세요:",
@@ -463,7 +471,7 @@ def main():
         else:
             st.warning("Test Set 평가지표를 계산할 수 없습니다.")
         
-        # --- [수정] 지표 설명을 HR 예시로 변경 및 Accuracy 추가 ---
+        
         st.markdown(
             """
             - **Accuracy (정확도)가 중요하다면?**
@@ -471,7 +479,7 @@ def main():
                 - **(주의)** 만약 잔류자가 95%고 이직자가 5%라면, 모델이 전부 '잔류'로 예측해도 정확도는 95%가 나옵니다. 데이터가 불균형할 땐 신뢰하기 어려운 지표입니다.
 
             - **Recall (재현율)이 중요하다면?**
-                - **(예시: HR 분석)** 실제 이직할 직원(Positive)을 놓치지 않고 찾아내는 것이 목표일 때 선택합니다. (예: 핵심 인재 유출 방지)
+                - **(예시: HR 분석)** **실제 이직할 직원(Positive)**을 놓치지 않고 찾아내는 것이 목표일 때 선택합니다. (예: 핵심 인재 유출 방지)
                 - **False Negative (FN) 비용**이 매우 클 때 (예: 이직할 핵심 인재를 '잔류'로 잘못 예측하여 아무 조치도 못 하고 놓침) 이 지표를 높여야 합니다.
 
             - **Precision (정밀도)이 중요하다면?**
@@ -488,11 +496,6 @@ def main():
         )
         st.balloons()
 
-
-# 4. 스크립트 실행
-
-if __name__ == "__main__":
-    main()
 
 # 4. 스크립트 실행
 
